@@ -1,4 +1,4 @@
-const CACHE_NAME = 'central-llamadas-v1';
+const CACHE_NAME = 'central-llamadas-v2';
 const ASSETS = [
   './',
   './index.html',
