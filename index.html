@@ -409,6 +409,56 @@ textarea.import-area:focus{outline:none; border-color:var(--primary);}
 
 .bottom-safe{position:fixed; bottom:0; left:0; right:0; height:24px; background:linear-gradient(to top, var(--bg), transparent); pointer-events:none;}
 
+/* ---- Botones de teléfono (soporta múltiples) ---- */
+.phone-actions{
+  display:flex; flex-direction:column; gap:8px; margin-top:16px;
+}
+a.phone-btn{
+  display:flex; align-items:center; gap:12px;
+  background:radial-gradient(circle at 30% 30%, #7C9BFF, #4E6FE0);
+  border-radius:12px; padding:12px 16px;
+  text-decoration:none; color:#fff;
+  box-shadow:0 6px 16px rgba(108,140,255,0.28);
+  transition:transform .12s ease;
+}
+a.phone-btn:active{transform:scale(0.97);}
+a.phone-btn .pb-icon{font-size:20px; flex-shrink:0;}
+a.phone-btn .pb-text{display:flex; flex-direction:column; align-items:flex-start; text-align:left;}
+a.phone-btn .pb-label{
+  font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:1px;
+  text-transform:uppercase; opacity:.85;
+}
+a.phone-btn .pb-number{
+  font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:700; letter-spacing:.5px;
+}
+
+/* ---- Overlay de mapeo de columnas ---- */
+.overlay{
+  position:fixed; inset:0; background:rgba(6,9,17,0.94); z-index:80;
+  display:none; overflow-y:auto; padding:20px 16px 60px;
+}
+.overlay.open{display:block;}
+.overlay-inner{max-width:520px; margin:0 auto; display:flex; flex-direction:column; gap:14px;}
+
+.checkbox-list{display:flex; flex-direction:column; gap:6px; margin-top:6px;}
+.chk-row{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:var(--panel-2); border:1px solid var(--border); border-radius:8px;
+  padding:9px 10px; font-size:13px; cursor:pointer;
+}
+.chk-row input[type="checkbox"]{width:16px; height:16px; accent-color:var(--primary); flex-shrink:0;}
+.chk-row span{flex:1; font-family:'JetBrains Mono',monospace; font-size:12px;}
+.chk-row .phoneLabelInput{
+  flex:1; min-width:100px;
+  background:var(--panel); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); font-family:'Inter',sans-serif; font-size:12px; padding:6px 8px;
+}
+.chk-row .phoneLabelInput:focus{outline:none; border-color:var(--primary);}
+
+@media (max-width:360px){
+  a.phone-btn .pb-number{font-size:16px;}
+}
+
 @media (max-width:360px){
   .card-contact .phone{font-size:26px;}
   .ring-wrap{width:120px;height:120px;}
@@ -449,10 +499,15 @@ textarea.import-area:focus{outline:none; border-color:var(--primary);}
         <button class="btn primary" id="btnImportAdd">Agregar a la base</button>
         <button class="btn danger" id="btnImportReplace">Reemplazar todo</button>
       </div>
+      <div id="structureInfo"></div>
     </div>
 
     <div class="panel-block">
       <h3>Contactos <span id="countBadge" style="color:var(--text-dim); font-weight:400;"></span></h3>
+      <div id="baseSearchWrap" style="display:none; margin-top:10px;">
+        <input type="text" id="baseSearchInput" placeholder="Buscar por nombre o teléfono…"
+          style="width:100%; background:var(--panel-2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:'Inter',sans-serif; font-size:13px; padding:10px 12px;">
+      </div>
       <div class="btn-row" style="margin-top:8px;">
         <button class="btn" id="btnResetEstados">Reiniciar estados</button>
         <button class="btn danger" id="btnClearAll">Borrar todo</button>
@@ -476,6 +531,10 @@ textarea.import-area:focus{outline:none; border-color:var(--primary);}
   </section>
 
   <div class="bottom-safe"></div>
+</div>
+
+<div class="overlay" id="mappingOverlay">
+  <div class="overlay-inner" id="mappingInner"></div>
 </div>
 
 <script>
@@ -507,10 +566,21 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 
 <script>
 (function(){
-  const HEADERS = ['Nombre','Tipo_Documento','NIF','Celular_Final','Cta_Contr','Distrito','DIRECION',
-    'CORD_X','CORD_Y','MALLA','MANZANA_LOTE','FLAG_SEGMENTACION','CORREO','LIMITE_CREDITO','SALDO',
-    'EDAD','FC','RIESGO_CORREGIDO','CONTACTADO','INTENTOS','FECHA DE CONTACTO','DERIVADO A',
-    'INTERESADO EN:','CANTIDAD DE VENTAS','FECHA DE LA VENTA','IMPORTE','CATEGORIA','PDV COMPRA','Observaciones'];
+  // ---------- Definición de conceptos que la app entiende ----------
+  const CONCEPTS = [
+    {key:'nombre',        label:'Nombre',                    required:true,  multi:false, autoCreate:false, syn:['NOMBRE','NOMBRES','CLIENTE','NOMBRE COMPLETO','NOMBRE_COMPLETO']},
+    {key:'telefonos',     label:'Teléfono(s)',                required:true,  multi:true,  autoCreate:false, syn:['TELEFONO','TELEFONOS','CELULAR','CELULAR_FINAL','CEL','MOVIL','TELF','NUMERO','NUMERO_CELULAR','TELEFONO_FINAL','TELEFONO1','TELEFONO2']},
+    {key:'distrito',      label:'Distrito',                   required:false, multi:false, autoCreate:false, syn:['DISTRITO']},
+    {key:'direccion',     label:'Dirección',                  required:false, multi:false, autoCreate:false, syn:['DIRECCION','DIRECION','DOMICILIO']},
+    {key:'riesgo',        label:'Riesgo',                     required:false, multi:false, autoCreate:false, syn:['RIESGO','RIESGO_CORREGIDO','NIVEL_RIESGO','SCORE']},
+    {key:'saldo',         label:'Saldo',                      required:false, multi:false, autoCreate:false, syn:['SALDO']},
+    {key:'limite',        label:'Límite de crédito',          required:false, multi:false, autoCreate:false, syn:['LIMITE_CREDITO','LIMITE']},
+    {key:'correo',        label:'Correo',                     required:false, multi:false, autoCreate:false, syn:['CORREO','EMAIL','CORREO_ELECTRONICO']},
+    {key:'contactado',    label:'Contactado (SI/NO)',         required:false, multi:false, autoCreate:true,  syn:['CONTACTADO']},
+    {key:'intentos',      label:'Intentos',                   required:false, multi:false, autoCreate:true,  syn:['INTENTOS']},
+    {key:'fechaContacto', label:'Fecha de contacto',          required:false, multi:false, autoCreate:true,  syn:['FECHA DE CONTACTO','FECHA_CONTACTO','FECHACONTACTO']},
+    {key:'observaciones', label:'Observaciones / Comentarios',required:false, multi:false, autoCreate:true,  syn:['OBSERVACIONES','COMENTARIOS','NOTAS','NOTA']},
+  ];
 
   const RESULT_META = {
     efectiva:    {label:'Efectiva',      color:'var(--green)', obs:'CONTACTADO - EFECTIVO', contactado:'SI'},
@@ -521,58 +591,413 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     no_existe:   {label:'No existe',     color:'var(--red)',   obs:'NÚMERO NO EXISTE',        contactado:'NO'},
     rechazo:     {label:'No le interesa',color:'var(--red)',   obs:'NO LE INTERESA',          contactado:'SI'},
   };
-  const STORAGE_KEY = 'central_llamadas_cartera_v2';
+
+  const STORAGE_KEY = 'central_llamadas_dataset_v3';
+  const PROFILES_KEY = 'central_llamadas_mapping_profiles_v1';
 
   let contacts = [];
+  let headersFull = [];
+  let mapping = null;
   let currentIndex = 0;
   let callActive = false;
   let callSeconds = 0;
   let callTimerHandle = null;
   let detailsOpen = false;
+  let pendingImport = null; // {headers, rows, mode:'replace'|'add'}
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
-  // ---------- Storage (100% local, en el navegador del dispositivo) ----------
-  function loadContacts(){
+  // ---------- Utils ----------
+  function escapeHTML(str){
+    return String(str||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  }
+  function escapeAttr(str){ return escapeHTML(str); }
+  function uid(){ return 'c_' + Math.random().toString(36).slice(2,10); }
+  function todayStr(){
+    const d = new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function normalize(str){
+    return String(str||'')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .toUpperCase()
+      .replace(/:$/,'')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+  function prettyLabel(header){
+    const h = String(header||'').replace(/_/g,' ').replace(/:$/,'').trim();
+    return h.charAt(0).toUpperCase() + h.slice(1).toLowerCase();
+  }
+  function money(v){
+    const n = parseFloat(v);
+    if(isNaN(n)) return v || '-';
+    return 'S/ ' + n.toLocaleString('es-PE',{minimumFractionDigits:0, maximumFractionDigits:2});
+  }
+  function looksLikePhoneData(values){
+    const sample = values.filter(v=>v!==undefined && v!==null && String(v).trim()!=='').slice(0,15);
+    if(sample.length===0) return false;
+    const hits = sample.filter(v=>/^[0-9+][0-9\-\s]{5,14}$/.test(String(v).trim())).length;
+    return hits / sample.length > 0.6;
+  }
+  function signatureOf(headers){
+    return headers.map(normalize).sort().join('|');
+  }
+
+  // ---------- Perfiles de mapeo (recordar estructuras ya vistas) ----------
+  function loadProfiles(){
+    try{ return JSON.parse(localStorage.getItem(PROFILES_KEY) || '{}'); }catch(e){ return {}; }
+  }
+  function saveProfile(sig, profile){
+    const all = loadProfiles();
+    all[sig] = profile;
+    localStorage.setItem(PROFILES_KEY, JSON.stringify(all));
+  }
+
+  // ---------- Auto-detección de mapeo ----------
+  function autoGuessMapping(headers, sampleRows){
+    const normHeaders = headers.map(h=>({raw:h, norm:normalize(h)}));
+    const guess = {};
+    const usedHeaders = new Set();
+
+    CONCEPTS.forEach(concept=>{
+      if(concept.multi) return; // teléfonos se resuelve aparte
+      let found = null;
+      for(const syn of concept.syn){
+        const match = normHeaders.find(h=> h.norm === normalize(syn) && !usedHeaders.has(h.raw));
+        if(match){ found = match.raw; break; }
+      }
+      guess[concept.key] = found;
+      if(found) usedHeaders.add(found);
+    });
+
+    // teléfonos: por nombre de columna
+    const phoneSyn = CONCEPTS.find(c=>c.key==='telefonos').syn.map(normalize);
+    let phoneCols = normHeaders.filter(h=> phoneSyn.includes(h.norm) && !usedHeaders.has(h.raw)).map(h=>h.raw);
+    // si no se detectó ninguna por nombre, buscar por patrón de datos numérico tipo teléfono
+    if(phoneCols.length === 0){
+      phoneCols = normHeaders.filter(h=>{
+        if(usedHeaders.has(h.raw)) return false;
+        const vals = sampleRows.map(r=>r[h.raw]);
+        return looksLikePhoneData(vals);
+      }).map(h=>h.raw);
+    }
+    phoneCols.forEach(h=>usedHeaders.add(h));
+    guess.telefonos = phoneCols.map(h=>({header:h, label: prettyLabel(h)}));
+
+    return guess;
+  }
+
+  // ---------- Filtro previo a importar (para bases maestras grandes) ----------
+  let filterCallback = null;
+
+  function openFilterOverlay(headers, rows, onDone){
+    filterCallback = onDone;
+    const total = rows.length;
+    let html = `
+      <div class="panel-block">
+        <h3>¿Qué porción vas a trabajar hoy?</h3>
+        <div class="hint">Este archivo tiene <b>${total.toLocaleString('es-PE')}</b> filas. Filtra la porción que te toca antes de armar la cola de llamadas — puedes combinar los filtros o dejarlos vacíos para traer todo.</div>
+      </div>
+
+      <div class="panel-block" style="display:flex; flex-direction:column; gap:12px;">
+        <div class="field">
+          <label>Filtrar por columna (opcional)</label>
+          <select id="filterColumn">
+            <option value="">— Sin filtro por columna —</option>
+            ${headers.map(h=>`<option value="${escapeAttr(h)}">${escapeHTML(h)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>Condición</label>
+            <select id="filterOperator">
+              <option value="eq">Es igual a</option>
+              <option value="contains">Contiene</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Valor</label>
+            <input type="text" id="filterValue" placeholder="Ej. BREÑA">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label>Desde fila # (opcional)</label>
+            <input type="number" id="filterFrom" min="1" placeholder="1">
+          </div>
+          <div class="field">
+            <label>Hasta fila # (opcional)</label>
+            <input type="number" id="filterTo" min="1" placeholder="${total}">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Muestra aleatoria (opcional — cantidad)</label>
+          <input type="number" id="filterRandom" min="1" placeholder="Ej. 150">
+        </div>
+
+        <div class="hint" id="filterPreview" style="margin-top:2px; margin-bottom:0;">Coincidencias: ${total.toLocaleString('es-PE')} de ${total.toLocaleString('es-PE')}</div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn" id="btnFilterAll">Importar todo (sin filtrar)</button>
+        <button class="btn primary" id="btnFilterApply">Aplicar y continuar</button>
+      </div>
+    `;
+    $('#mappingInner').innerHTML = html;
+    $('#mappingOverlay').classList.add('open');
+
+    function computeFiltered(){
+      let out = rows;
+      const col = $('#filterColumn').value;
+      const op = $('#filterOperator').value;
+      const val = $('#filterValue').value.trim();
+      if(col && val){
+        const vNorm = normalize(val);
+        out = out.filter(r=>{
+          const cell = normalize(r[col]);
+          return op === 'eq' ? cell === vNorm : cell.includes(vNorm);
+        });
+      }
+      const from = parseInt($('#filterFrom').value, 10);
+      const to = parseInt($('#filterTo').value, 10);
+      if(!isNaN(from) || !isNaN(to)){
+        const f = !isNaN(from) ? Math.max(1, from) : 1;
+        const t = !isNaN(to) ? to : out.length;
+        out = out.slice(f-1, t);
+      }
+      const rnd = parseInt($('#filterRandom').value, 10);
+      if(!isNaN(rnd) && rnd > 0 && rnd < out.length){
+        const shuffled = out.slice().sort(()=>Math.random()-0.5);
+        out = shuffled.slice(0, rnd);
+      }
+      return out;
+    }
+
+    function updatePreview(){
+      const n = computeFiltered().length;
+      $('#filterPreview').innerHTML = `Coincidencias: <b>${n.toLocaleString('es-PE')}</b> de ${total.toLocaleString('es-PE')}`;
+    }
+    ['filterColumn','filterOperator','filterValue','filterFrom','filterTo','filterRandom'].forEach(id=>{
+      $('#'+id).addEventListener('input', updatePreview);
+      $('#'+id).addEventListener('change', updatePreview);
+    });
+
+    $('#btnFilterAll').addEventListener('click', ()=>{
+      closeMappingOverlay();
+      filterCallback(rows);
+    });
+    $('#btnFilterApply').addEventListener('click', ()=>{
+      const filtered = computeFiltered();
+      if(filtered.length===0){ alert('Ese filtro no encontró ninguna fila. Ajusta los criterios.'); return; }
+      closeMappingOverlay();
+      filterCallback(filtered);
+    });
+  }
+
+  // ---------- Overlay de confirmación de mapeo ----------
+  function openMappingOverlay(headers, rows, mode){
+    pendingImport = {headers, rows, mode};
+    const sampleRows = rows.slice(0,20);
+    const guess = autoGuessMapping(headers, sampleRows);
+
+    const singleConcepts = CONCEPTS.filter(c=>!c.multi);
+    let html = `
+      <div class="panel-block">
+        <h3>Confirma la estructura de este archivo</h3>
+        <div class="hint">Detectamos ${headers.length} columnas. Confirma o corrige qué es cada dato — solo se te preguntará esto la primera vez que veas esta estructura, luego la app la recuerda.</div>
+      </div>
+      <div class="panel-block" style="display:flex; flex-direction:column; gap:12px;">
+        <div class="field">
+          <label>📞 Columnas de teléfono (marca todas las que apliquen)</label>
+          <div class="checkbox-list" id="mapPhones">
+            ${headers.map(h=>{
+              const checked = guess.telefonos.some(t=>t.header===h);
+              return `<label class="chk-row">
+                <input type="checkbox" value="${escapeAttr(h)}" ${checked?'checked':''} class="phoneChk">
+                <span>${escapeHTML(h)}</span>
+                <input type="text" class="phoneLabelInput" data-for="${escapeAttr(h)}" placeholder="Etiqueta" value="${escapeAttr(prettyLabel(h))}" style="${checked?'':'display:none;'}">
+              </label>`;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="panel-block" style="display:flex; flex-direction:column; gap:10px;">
+        ${singleConcepts.map(c=>{
+          const options = ['<option value="">— Ninguno —</option>']
+            .concat(c.autoCreate ? [`<option value="__create__">— Crear columna nueva —</option>`] : [])
+            .concat(headers.map(h=>`<option value="${escapeAttr(h)}" ${guess[c.key]===h?'selected':''}>${escapeHTML(h)}</option>`));
+          const noneSelected = !guess[c.key];
+          if(noneSelected && c.autoCreate){
+            options[1] = options[1].replace('<option value="__create__">','<option value="__create__" selected>');
+          } else if(noneSelected){
+            options[0] = options[0].replace('<option value="">','<option value="" selected>');
+          }
+          return `<div class="field">
+            <label>${c.label}${c.required?' *':''}</label>
+            <select data-concept="${c.key}">${options.join('')}</select>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="btn-row">
+        <button class="btn danger" id="btnMapCancel">Cancelar</button>
+        <button class="btn primary" id="btnMapConfirm">Guardar y continuar</button>
+      </div>
+    `;
+    $('#mappingInner').innerHTML = html;
+    $('#mappingOverlay').classList.add('open');
+
+    $$('.phoneChk').forEach(chk=>{
+      chk.addEventListener('change', ()=>{
+        const input = $(`.phoneLabelInput[data-for="${CSS.escape(chk.value)}"]`);
+        if(input) input.style.display = chk.checked ? 'block' : 'none';
+      });
+    });
+
+    $('#btnMapCancel').addEventListener('click', closeMappingOverlay);
+    $('#btnMapConfirm').addEventListener('click', ()=> confirmMapping(headers));
+  }
+
+  function closeMappingOverlay(){
+    $('#mappingOverlay').classList.remove('open');
+    pendingImport = null;
+  }
+
+  function confirmMapping(headers){
+    const finalMapping = {};
+    CONCEPTS.filter(c=>!c.multi).forEach(c=>{
+      const sel = $(`select[data-concept="${c.key}"]`);
+      const val = sel ? sel.value : '';
+      finalMapping[c.key] = (val && val !== '__create__') ? val : null;
+      if(val === '__create__') finalMapping[c.key] = {create:true};
+    });
+    const phoneEntries = [];
+    $$('.phoneChk').forEach(chk=>{
+      if(chk.checked){
+        const labelInput = $(`.phoneLabelInput[data-for="${CSS.escape(chk.value)}"]`);
+        phoneEntries.push({header: chk.value, label: (labelInput && labelInput.value.trim()) || prettyLabel(chk.value)});
+      }
+    });
+    if(!finalMapping.nombre){ alert('Debes indicar cuál columna es el Nombre.'); return; }
+    if(phoneEntries.length===0){ alert('Debes marcar al menos una columna de teléfono.'); return; }
+    finalMapping.telefonos = phoneEntries;
+
+    // resolver columnas "crear nueva": genera nombre de columna que no choque con las existentes
+    let extendedHeaders = headers.slice();
+    CONCEPTS.filter(c=>c.autoCreate).forEach(c=>{
+      if(finalMapping[c.key] && finalMapping[c.key].create){
+        let base = c.key==='contactado' ? 'CONTACTADO' : c.key==='intentos' ? 'INTENTOS' : c.key==='fechaContacto' ? 'FECHA DE CONTACTO' : 'Observaciones';
+        let name = base, n=2;
+        while(extendedHeaders.includes(name)){ name = base+' '+n; n++; }
+        extendedHeaders.push(name);
+        finalMapping[c.key] = name;
+      }
+    });
+
+    const sig = signatureOf(headers);
+    saveProfile(sig, {headers: extendedHeaders, mapping: finalMapping});
+    closeMappingOverlay();
+    finishImport(extendedHeaders, finalMapping, pendingImport.rows, pendingImport.mode);
+  }
+
+  // ---------- Construcción de contactos a partir del mapeo ----------
+  function buildContactsFromRows(rows, hdrs, map){
+    return rows.map(row=>{
+      const c = {id: uid(), estado:'pendiente', resultado:null, intentosNum:0};
+      hdrs.forEach(h=>{
+        let v = row[h];
+        if(v instanceof Date){
+          v = v.getFullYear()+'-'+String(v.getMonth()+1).padStart(2,'0')+'-'+String(v.getDate()).padStart(2,'0');
+        }
+        c[h] = (v !== undefined && v !== null) ? String(v) : '';
+      });
+      const nombreVal = map.nombre ? c[map.nombre] : '';
+      const tels = map.telefonos.map(t=>({label:t.label, header:t.header, numero:(c[t.header]||'').trim()})).filter(t=>t.numero);
+      if(!nombreVal && tels.length===0) return null;
+      if(tels.length===0) return null;
+      if(map.intentos){
+        const m = (c[map.intentos]||'').match(/(\d+)/);
+        c.intentosNum = m ? parseInt(m[1],10) : 0;
+      }
+      if(map.contactado && (c[map.contactado]||'').trim().toUpperCase()==='SI') c.estado = 'llamado';
+      return c;
+    }).filter(Boolean);
+  }
+
+  function finishImport(hdrs, map, rows, mode){
+    const built = buildContactsFromRows(rows, hdrs, map);
+    if(built.length===0){ alert('No se encontraron filas válidas (revisa que existan nombre y teléfono).'); return; }
+    if(mode==='replace'){
+      contacts = built; headersFull = hdrs; mapping = map; currentIndex = 0;
+    } else {
+      // agregar: solo permitido si coincide la estructura activa
+      if(mapping && signatureOf(headersFull) !== signatureOf(hdrs)){
+        alert('La base actual tiene una estructura distinta. Para agregar estos contactos primero exporta/borra la base actual, o usa "Reemplazar todo".');
+        return;
+      }
+      contacts = contacts.concat(built);
+      if(!mapping){ headersFull = hdrs; mapping = map; }
+    }
+    saveDataset();
+    renderBase(); renderCola();
+    $('#btnAttachFile').textContent = '📎 Archivo importado ✓ (' + built.length + ' contactos)';
+  }
+
+  // ---------- Storage (IndexedDB — 100% local, soporta datasets grandes) ----------
+  const IDB_NAME = 'central_llamadas_db';
+  const IDB_STORE = 'dataset';
+  function openIDB(){
+    return new Promise((resolve,reject)=>{
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = ()=>{
+        if(!req.result.objectStoreNames.contains(IDB_STORE)) req.result.createObjectStore(IDB_STORE);
+      };
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+  async function idbGet(key){
+    const db = await openIDB();
+    return new Promise((resolve,reject)=>{
+      const tx = db.transaction(IDB_STORE,'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = ()=> resolve(req.result);
+      req.onerror = ()=> reject(req.error);
+    });
+  }
+  async function idbSet(key, value){
+    const db = await openIDB();
+    return new Promise((resolve,reject)=>{
+      const tx = db.transaction(IDB_STORE,'readwrite');
+      tx.objectStore(IDB_STORE).put(value, key);
+      tx.oncomplete = ()=> resolve();
+      tx.onerror = ()=> reject(tx.error);
+    });
+  }
+  async function loadDataset(){
+    $('#statusTxt').textContent = 'cargando…';
     try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      contacts = raw ? JSON.parse(raw) : [];
-    }catch(e){ contacts = []; }
+      const data = await idbGet('dataset');
+      if(data){
+        contacts = data.contacts || [];
+        headersFull = data.headersFull || [];
+        mapping = data.mapping || null;
+      }
+      $('#statusTxt').textContent = 'listo';
+    }catch(e){ $('#statusTxt').textContent = 'error al cargar'; }
     render();
   }
-  function saveContacts(){
+  async function saveDataset(){
     try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(contacts));
+      await idbSet('dataset', {contacts, headersFull, mapping});
       $('#statusTxt').textContent = 'guardado';
-    }catch(e){ $('#statusTxt').textContent = 'error al guardar'; }
-  }
-  function uid(){ return 'c_' + Math.random().toString(36).slice(2,10); }
-
-  // ---------- Import: xlsx real ----------
-  function buildContactFromRow(row){
-    const c = {id: uid(), estado:'pendiente', resultado:null, intentosNum:0};
-    HEADERS.forEach(h=>{
-      let v = row[h];
-      if(v instanceof Date){
-        v = v.getFullYear()+'-'+String(v.getMonth()+1).padStart(2,'0')+'-'+String(v.getDate()).padStart(2,'0');
-      }
-      c[h] = (v !== undefined && v !== null) ? String(v) : '';
-    });
-    const m = (c['INTENTOS']||'').match(/(\d+)/);
-    c.intentosNum = m ? parseInt(m[1],10) : 0;
-    if((c['CONTACTADO']||'').trim().toUpperCase() === 'SI') c.estado = 'llamado';
-    if(!c['Celular_Final']) return null;
-    return c;
+    }catch(e){ $('#statusTxt').textContent = 'error al guardar (base muy grande para este dispositivo)'; }
   }
 
-  function importXlsxFile(arrayBuffer){
-    const wb = XLSX.read(arrayBuffer, {type:'array', cellDates:true});
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
-    return rows.map(buildContactFromRow).filter(Boolean);
-  }
-
+  // ---------- Import: texto simple (fallback) ----------
   function parseLine(line){
     line = line.trim();
     if(!line) return null;
@@ -584,16 +1009,13 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     telefono = telefono.replace(/[^0-9+]/g,'');
     if(!telefono) return null;
     if(!nombre) nombre = 'Sin nombre';
-    const c = {id: uid(), estado:'pendiente', resultado:null, intentosNum:0};
-    HEADERS.forEach(h=>{ c[h] = ''; });
-    c['Nombre'] = nombre; c['Celular_Final'] = telefono; c['Observaciones'] = notas;
-    return c;
+    return {Nombre:nombre, Celular:telefono, Observaciones:notas};
   }
   function parseImportText(text){
     return text.split('\n').map(parseLine).filter(Boolean);
   }
 
-  // ---------- Views ----------
+  // ---------- Vistas / tabs ----------
   function switchView(name){
     $$('.view').forEach(v=>v.classList.remove('active'));
     $$('.tab-btn').forEach(b=>b.classList.remove('active'));
@@ -614,7 +1036,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     for(let i=0;i<contacts.length;i++){ if(contacts[i].estado==='pendiente') return i; }
     return -1;
   }
-
   function riskClass(riesgo){
     riesgo = (riesgo||'').toUpperCase();
     if(riesgo.includes('BAJO')) return 'risk-bajo';
@@ -623,10 +1044,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     return '';
   }
 
-  function money(v){
-    const n = parseFloat(v);
-    if(isNaN(n)) return v || '-';
-    return 'S/ ' + n.toLocaleString('es-PE',{minimumFractionDigits:0, maximumFractionDigits:2});
+  function extraFieldHeaders(){
+    if(!mapping) return [];
+    const used = new Set();
+    CONCEPTS.forEach(c=>{
+      if(c.multi){ mapping.telefonos.forEach(t=>used.add(t.header)); }
+      else if(mapping[c.key]) used.add(mapping[c.key]);
+    });
+    return headersFull.filter(h=>!used.has(h));
   }
 
   function renderCola(){
@@ -650,13 +1075,17 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     const posInQueue = pend.indexOf(currentIndex) + 1;
     const pct = Math.round((doneCount/total)*100);
 
-    const distrito = c['Distrito'] || '';
-    const riesgo = c['RIESGO_CORREGIDO'] || '';
-    const saldo = c['SALDO'];
-    const limite = c['LIMITE_CREDITO'];
-    const direccion = c['DIRECION'] || '';
-    const obsPrev = c['Observaciones'] || '';
+    const nombre = mapping.nombre ? c[mapping.nombre] : '';
+    const distrito = mapping.distrito ? c[mapping.distrito] : '';
+    const riesgo = mapping.riesgo ? c[mapping.riesgo] : '';
+    const saldo = mapping.saldo ? c[mapping.saldo] : '';
+    const limite = mapping.limite ? c[mapping.limite] : '';
+    const direccion = mapping.direccion ? c[mapping.direccion] : '';
+    const obsPrev = mapping.observaciones ? c[mapping.observaciones] : '';
     const intentosPrev = c.intentosNum || 0;
+    const telefonos = mapping.telefonos.map(t=>({label:t.label, numero:c[t.header]||''})).filter(t=>t.numero);
+
+    const extras = extraFieldHeaders();
 
     wrap.innerHTML = `
       <div class="queue-meta">
@@ -666,34 +1095,30 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
 
       <div class="card-contact">
-        <div class="name">${escapeHTML(c['Nombre'])}</div>
-        <div class="phone">${escapeHTML(c['Celular_Final'])}</div>
+        <div class="name">${escapeHTML(nombre)}</div>
         <div class="tag-row">
           ${distrito ? `<span class="mini-tag">${escapeHTML(distrito)}</span>` : ''}
           ${riesgo ? `<span class="mini-tag ${riskClass(riesgo)}">${escapeHTML(riesgo)}</span>` : ''}
           ${intentosPrev>0 ? `<span class="mini-tag">Intento ${intentosPrev+1}</span>` : ''}
         </div>
 
-        <div class="info-strip">
-          <div class="item"><div class="k">Saldo</div><div class="v">${money(saldo)}</div></div>
-          <div class="item"><div class="k">Límite</div><div class="v">${money(limite)}</div></div>
-        </div>
+        ${(saldo || limite) ? `<div class="info-strip">
+          ${saldo ? `<div class="item"><div class="k">Saldo</div><div class="v">${money(saldo)}</div></div>` : ''}
+          ${limite ? `<div class="item"><div class="k">Límite</div><div class="v">${money(limite)}</div></div>` : ''}
+        </div>` : ''}
         ${direccion ? `<div class="address-line">📍 ${escapeHTML(direccion)}</div>` : ''}
         ${obsPrev ? `<div class="prev-obs"><b>Última nota:</b> ${escapeHTML(obsPrev)}</div>` : ''}
 
-        <div class="ring-wrap">
-          <svg viewBox="0 0 150 150">
-            <circle class="track" cx="75" cy="75" r="70"></circle>
-            <circle class="fill" id="ringFill" cx="75" cy="75" r="70"></circle>
-          </svg>
-          <a class="call-btn" id="callBtn" href="tel:${escapeAttr(c['Celular_Final'])}">
-            <span class="icon">📞</span>
-            <span class="label">Llamar</span>
-          </a>
+        <div class="phone-actions">
+          ${telefonos.map(t=>`
+            <a class="phone-btn" href="tel:${escapeAttr(t.numero)}" data-call="1">
+              <span class="pb-icon">📞</span>
+              <span class="pb-text"><span class="pb-label">${escapeHTML(t.label)}</span><span class="pb-number">${escapeHTML(t.numero)}</span></span>
+            </a>`).join('')}
         </div>
         <div class="timer" id="timerTxt"></div>
 
-        <textarea class="notes-field" id="notesField" placeholder="Observaciones de esta llamada">${escapeHTML(c['Observaciones']||'')}</textarea>
+        <textarea class="notes-field" id="notesField" placeholder="Observaciones de esta llamada">${escapeHTML(obsPrev)}</textarea>
       </div>
 
       <div class="result-grid">
@@ -706,59 +1131,34 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
         <button class="result-btn rechazo" data-r="rechazo"><span class="dot"></span>No le interesa</button>
       </div>
 
-      <button class="details-toggle" id="detailsToggle">${detailsOpen ? '− ocultar detalles de venta / derivación' : '+ agregar detalles de venta / derivación'}</button>
+      ${extras.length>0 ? `
+      <button class="details-toggle" id="detailsToggle">${detailsOpen ? '− ocultar más datos' : '+ ver / editar más datos'}</button>
       <div class="details-panel ${detailsOpen?'open':''}" id="detailsPanel">
-        <div class="field">
-          <label>Derivado a</label>
-          <input type="text" id="f_derivado" value="${escapeAttr(c['DERIVADO A'])}" placeholder="Ej. PROMART - PTE PIEDRA">
-        </div>
-        <div class="field">
-          <label>Interesado en</label>
-          <input type="text" id="f_interesado" value="${escapeAttr(c['INTERESADO EN:'])}" placeholder="Ej. Materiales de construcción">
-        </div>
-        <div class="field-row">
+        ${extras.map((h,i)=>`
           <div class="field">
-            <label>Cantidad de ventas</label>
-            <input type="text" id="f_cantventas" value="${escapeAttr(c['CANTIDAD DE VENTAS'])}">
-          </div>
-          <div class="field">
-            <label>Importe</label>
-            <input type="text" id="f_importe" value="${escapeAttr(c['IMPORTE'])}">
-          </div>
-        </div>
-        <div class="field-row">
-          <div class="field">
-            <label>Fecha de venta</label>
-            <input type="text" id="f_fechaventa" value="${escapeAttr(c['FECHA DE LA VENTA'])}" placeholder="YYYY-MM-DD">
-          </div>
-          <div class="field">
-            <label>Categoría</label>
-            <input type="text" id="f_categoria" value="${escapeAttr(c['CATEGORIA'])}">
-          </div>
-        </div>
-        <div class="field">
-          <label>PDV compra</label>
-          <input type="text" id="f_pdv" value="${escapeAttr(c['PDV COMPRA'])}">
-        </div>
-      </div>
+            <label>${escapeHTML(prettyLabel(h))}</label>
+            <input type="text" data-extra="${escapeAttr(h)}" value="${escapeAttr(c[h])}">
+          </div>`).join('')}
+      </div>` : ''}
 
       <button class="skip-btn" id="skipBtn">saltar sin marcar →</button>
     `;
 
-    $('#callBtn').addEventListener('click', startCallTimer);
+    $$('[data-call]').forEach(btn=> btn.addEventListener('click', startCallTimer));
     $$('.result-btn').forEach(b=> b.addEventListener('click', ()=> markResult(c.id, b.dataset.r)));
     $('#skipBtn').addEventListener('click', ()=>{
       const idx = nextPendingIndex(currentIndex);
       if(idx !== -1){ currentIndex = idx; renderCola(); }
     });
-    $('#notesField').addEventListener('change', (e)=>{ c['Observaciones'] = e.target.value; saveContacts(); });
-    $('#detailsToggle').addEventListener('click', ()=>{ detailsOpen = !detailsOpen; renderCola(); });
-
-    const detailMap = {f_derivado:'DERIVADO A', f_interesado:'INTERESADO EN:', f_cantventas:'CANTIDAD DE VENTAS',
-      f_importe:'IMPORTE', f_fechaventa:'FECHA DE LA VENTA', f_categoria:'CATEGORIA', f_pdv:'PDV COMPRA'};
-    Object.keys(detailMap).forEach(id=>{
-      const el = $('#'+id);
-      if(el) el.addEventListener('change', ()=>{ c[detailMap[id]] = el.value; saveContacts(); });
+    $('#notesField').addEventListener('change', (e)=>{
+      if(mapping.observaciones) c[mapping.observaciones] = e.target.value;
+      saveDataset();
+    });
+    if($('#detailsToggle')){
+      $('#detailsToggle').addEventListener('click', ()=>{ detailsOpen = !detailsOpen; renderCola(); });
+    }
+    $$('[data-extra]').forEach(inp=>{
+      inp.addEventListener('change', ()=>{ c[inp.dataset.extra] = inp.value; saveDataset(); });
     });
 
     resetTimerUI();
@@ -771,7 +1171,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
   function startCallTimer(){
     if(callActive) return;
     callActive = true; callSeconds = 0;
-    const ring = $('#ringFill'); const CIRC = 439.8;
     if(callTimerHandle) clearInterval(callTimerHandle);
     callTimerHandle = setInterval(()=>{
       callSeconds++;
@@ -779,7 +1178,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const ss = String(callSeconds%60).padStart(2,'0');
       const t = $('#timerTxt');
       if(t){ t.textContent = `en llamada · ${mm}:${ss}`; t.classList.add('active'); }
-      if(ring){ const pct = Math.min(callSeconds/60, 1); ring.style.strokeDashoffset = CIRC - (CIRC*pct); }
     }, 1000);
   }
   function resetTimerUI(){
@@ -789,11 +1187,6 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if(t){ t.textContent=''; t.classList.remove('active'); }
   }
 
-  function todayStr(){
-    const d = new Date();
-    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-  }
-
   function markResult(contactId, resultado){
     const c = contacts.find(x=>x.id===contactId);
     if(!c) return;
@@ -801,46 +1194,93 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     c.resultado = resultado;
     c.estado = 'llamado';
     c.intentosNum = (c.intentosNum||0) + 1;
-    c['INTENTOS'] = `INTENTO ${c.intentosNum} VECES`;
-    c['CONTACTADO'] = meta.contactado;
-    c['FECHA DE CONTACTO'] = todayStr();
-    if(!c['Observaciones'] || c['Observaciones'].trim()==='' ) c['Observaciones'] = meta.obs;
+    if(mapping.intentos) c[mapping.intentos] = `INTENTO ${c.intentosNum} VECES`;
+    if(mapping.contactado) c[mapping.contactado] = meta.contactado;
+    if(mapping.fechaContacto) c[mapping.fechaContacto] = todayStr();
+    if(mapping.observaciones && (!c[mapping.observaciones] || c[mapping.observaciones].trim()==='')) c[mapping.observaciones] = meta.obs;
     detailsOpen = false;
     resetTimerUI();
     const idx = nextPendingIndex(contacts.indexOf(c));
     currentIndex = idx !== -1 ? idx : 0;
-    saveContacts();
+    saveDataset();
     renderCola();
   }
 
   // ---------- Base ----------
+  let basePageSize = 150;
+  let baseSearchTerm = '';
+
   function renderBase(){
-    $('#countBadge').textContent = contacts.length ? `(${contacts.length})` : '';
+    $('#countBadge').textContent = contacts.length ? `(${contacts.length.toLocaleString('es-PE')})` : '';
+
+    const structureInfo = $('#structureInfo');
+    if(mapping){
+      const phonesTxt = mapping.telefonos.map(t=>t.label+' → '+t.header).join(', ');
+      structureInfo.innerHTML = `
+        <div class="hint" style="margin-top:10px; margin-bottom:0;">
+          <b>Estructura activa:</b> Nombre → ${escapeHTML(mapping.nombre||'-')} · Teléfonos: ${escapeHTML(phonesTxt)}
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="btnAdjustMapping">⚙️ Ajustar mapeo de columnas</button>
+        </div>`;
+      const btn = $('#btnAdjustMapping');
+      if(btn) btn.addEventListener('click', ()=>{
+        if(headersFull.length===0) return;
+        if(contacts.length > 3000 && !confirm('Tu base tiene ' + contacts.length.toLocaleString('es-PE') + ' contactos. Reabrir el mapeo puede tardar unos segundos. ¿Continuar?')) return;
+        const rows = contacts.map(c=>{ const r={}; headersFull.forEach(h=>r[h]=c[h]); return r; });
+        openMappingOverlay(headersFull, rows, 'replace');
+      });
+    } else {
+      structureInfo.innerHTML = '';
+    }
+
     const list = $('#contactList');
     if(contacts.length === 0){
       list.innerHTML = `<div style="text-align:center; color:var(--text-faint); font-size:12.5px; padding:16px 0;">Aún no hay contactos importados.</div>`;
+      $('#baseSearchWrap') && ($('#baseSearchWrap').style.display = 'none');
       return;
     }
-    list.innerHTML = contacts.map(c=>{
+    $('#baseSearchWrap') && ($('#baseSearchWrap').style.display = 'block');
+
+    let filtered = contacts;
+    if(baseSearchTerm.trim()){
+      const term = normalize(baseSearchTerm);
+      filtered = contacts.filter(c=>{
+        const nombre = mapping.nombre ? c[mapping.nombre] : '';
+        const tels = mapping.telefonos.map(t=>c[t.header]).join(' ');
+        return normalize(nombre).includes(term) || tels.includes(baseSearchTerm.trim());
+      });
+    }
+
+    const toShow = filtered.slice(0, basePageSize);
+
+    list.innerHTML = toShow.map(c=>{
       const tagClass = c.estado==='pendiente' ? 'pendiente' : (c.resultado||'pendiente');
       const tagText = c.estado==='pendiente' ? 'PENDIENTE' : (RESULT_META[c.resultado]?.label.toUpperCase() || 'LLAMADO');
-      const sub = [c['Distrito'], c['Celular_Final']].filter(Boolean).join(' · ');
+      const nombre = mapping.nombre ? c[mapping.nombre] : '(sin nombre)';
+      const tel = mapping.telefonos.map(t=>c[t.header]).filter(Boolean).join(' / ');
+      const sub = [mapping.distrito ? c[mapping.distrito] : '', tel].filter(Boolean).join(' · ');
       return `
       <div class="contact-row" data-id="${c.id}">
         <div class="info">
-          <div class="n">${escapeHTML(c['Nombre'])}</div>
+          <div class="n">${escapeHTML(nombre)}</div>
           <div class="p">${escapeHTML(sub)}</div>
         </div>
         <span class="tag ${tagClass}">${tagText}</span>
         <button class="del-x" data-del="${c.id}">✕</button>
       </div>`;
-    }).join('');
+    }).join('') + (filtered.length > toShow.length ? `
+      <button class="btn" id="btnLoadMore" style="margin-top:4px;">Cargar más (${(filtered.length - toShow.length).toLocaleString('es-PE')} restantes)</button>
+    ` : '') + `<div class="hint" style="margin-top:8px; margin-bottom:0;">Mostrando ${toShow.length.toLocaleString('es-PE')} de ${filtered.length.toLocaleString('es-PE')}${baseSearchTerm.trim() ? ' (filtrados de ' + contacts.length.toLocaleString('es-PE') + ')' : ''}.</div>`;
+
     list.querySelectorAll('[data-del]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         contacts = contacts.filter(c=>c.id !== btn.dataset.del);
-        saveContacts(); renderBase();
+        saveDataset(); renderBase();
       });
     });
+    const loadMoreBtn = $('#btnLoadMore');
+    if(loadMoreBtn) loadMoreBtn.addEventListener('click', ()=>{ basePageSize += 150; renderBase(); });
   }
 
   $('#btnAttachFile').addEventListener('click', ()=> $('#fileInput').click());
@@ -853,15 +1293,26 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       const reader = new FileReader();
       reader.onload = (evt)=>{
         try{
-          const parsed = importXlsxFile(evt.target.result);
-          if(parsed.length===0){ alert('No se encontraron filas válidas en el Excel (revisa que tenga la columna Celular_Final).'); return; }
-          if(confirm(`Se encontraron ${parsed.length} contactos.\n\nAceptar = reemplazar toda la base actual.\nCancelar = agregar a la base existente.`)){
-            contacts = parsed; currentIndex = 0;
-          } else {
-            contacts = contacts.concat(parsed);
-          }
-          saveContacts(); renderBase(); renderCola();
-          $('#btnAttachFile').textContent = '📎 ' + file.name + ' importado ✓';
+          const wb = XLSX.read(evt.target.result, {type:'array', cellDates:true});
+          const sheetName = wb.SheetNames[0];
+          const sheet = wb.Sheets[sheetName];
+          const headerRow = XLSX.utils.sheet_to_json(sheet, {header:1})[0] || [];
+          const headers = headerRow.map(h=>String(h||'').trim()).filter(Boolean);
+          const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+          if(headers.length===0 || rows.length===0){ alert('No se pudo leer el archivo (¿está vacío?).'); return; }
+
+          openFilterOverlay(headers, rows, (filteredRows)=>{
+            const mode = contacts.length===0 ? 'replace' :
+              (confirm(`Vas a importar ${filteredRows.length.toLocaleString('es-PE')} filas.\n\nAceptar = reemplazar toda la base actual.\nCancelar = agregar a la base existente.`) ? 'replace' : 'add');
+
+            const sig = signatureOf(headers);
+            const profiles = loadProfiles();
+            if(profiles[sig]){
+              finishImport(profiles[sig].headers, profiles[sig].mapping, filteredRows, mode);
+            } else {
+              openMappingOverlay(headers, filteredRows, mode);
+            }
+          });
         }catch(err){
           alert('No se pudo leer el archivo Excel. Verifica que sea un .xlsx válido.');
         }
@@ -879,33 +1330,45 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     e.target.value = '';
   });
 
+  function simpleTextMapping(){
+    return {nombre:'Nombre', telefonos:[{header:'Celular', label:'Celular'}], distrito:null, direccion:null,
+      riesgo:null, saldo:null, limite:null, correo:null, contactado:null, intentos:null, fechaContacto:null, observaciones:'Observaciones'};
+  }
+
   $('#btnImportAdd').addEventListener('click', ()=>{
-    const parsed = parseImportText($('#importArea').value);
-    if(parsed.length===0){ alert('No se encontraron números válidos en el texto.'); return; }
-    contacts = contacts.concat(parsed);
+    const parsedRows = parseImportText($('#importArea').value);
+    if(parsedRows.length===0){ alert('No se encontraron números válidos en el texto.'); return; }
+    const hdrs = ['Nombre','Celular','Observaciones'];
+    const mode = contacts.length===0 ? 'replace' : 'add';
+    if(mode==='replace'){
+      finishImport(hdrs, simpleTextMapping(), parsedRows, 'replace');
+    } else if(mapping && mapping.telefonos.length===1 && mapping.telefonos[0].header==='Celular' && mapping.nombre==='Nombre'){
+      finishImport(hdrs, mapping, parsedRows, 'add');
+    } else {
+      alert('La base actual tiene otra estructura (de un Excel importado). Para agregar contactos sueltos, primero borra la base o usa Reemplazar.');
+      return;
+    }
     $('#importArea').value = '';
-    saveContacts(); renderBase();
   });
   $('#btnImportReplace').addEventListener('click', ()=>{
-    const parsed = parseImportText($('#importArea').value);
-    if(parsed.length===0){ alert('No se encontraron números válidos en el texto.'); return; }
+    const parsedRows = parseImportText($('#importArea').value);
+    if(parsedRows.length===0){ alert('No se encontraron números válidos en el texto.'); return; }
     if(!confirm('Esto reemplazará toda la base actual. ¿Continuar?')) return;
-    contacts = parsed; currentIndex = 0;
+    finishImport(['Nombre','Celular','Observaciones'], simpleTextMapping(), parsedRows, 'replace');
     $('#importArea').value = '';
-    saveContacts(); renderBase();
   });
   $('#btnResetEstados').addEventListener('click', ()=>{
     if(contacts.length===0) return;
     if(!confirm('Todos los contactos volverán a estado "pendiente" (se conservan sus datos). ¿Continuar?')) return;
     contacts.forEach(c=>{ c.estado='pendiente'; c.resultado=null; });
     currentIndex = 0;
-    saveContacts(); renderBase();
+    saveDataset(); renderBase();
   });
   $('#btnClearAll').addEventListener('click', ()=>{
     if(contacts.length===0) return;
     if(!confirm('Esto borrará TODA la base de contactos permanentemente. ¿Continuar?')) return;
-    contacts = []; currentIndex = 0;
-    saveContacts(); renderBase();
+    contacts = []; headersFull = []; mapping = null; currentIndex = 0;
+    saveDataset(); renderBase();
   });
 
   // ---------- Reporte ----------
@@ -942,24 +1405,32 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     if(contacts.length===0){ alert('No hay contactos para exportar.'); return; }
     const rows = contacts.map(c=>{
       const row = {};
-      HEADERS.forEach(h=> row[h] = c[h] || '');
+      headersFull.forEach(h=> row[h] = c[h] || '');
       return row;
     });
-    const ws = XLSX.utils.json_to_sheet(rows, {header:HEADERS});
+    const ws = XLSX.utils.json_to_sheet(rows, {header:headersFull});
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Resultados');
     XLSX.writeFile(wb, `reporte_llamadas_${todayStr()}.xlsx`);
   });
 
-  // ---------- Utils ----------
-  function escapeHTML(str){
-    return String(str||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
-  }
-  function escapeAttr(str){ return escapeHTML(str); }
+  let searchDebounce = null;
+  document.addEventListener('input', (e)=>{
+    if(e.target && e.target.id === 'baseSearchInput'){
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(()=>{
+        baseSearchTerm = e.target.value;
+        basePageSize = 150;
+        renderBase();
+        const el = $('#baseSearchInput');
+        if(el){ el.focus(); const v = el.value; el.value=''; el.value=v; }
+      }, 250);
+    }
+  });
 
   function render(){ renderCola(); renderBase(); }
 
-  loadContacts();
+  loadDataset();
 
   if('serviceWorker' in navigator){
     window.addEventListener('load', ()=>{
